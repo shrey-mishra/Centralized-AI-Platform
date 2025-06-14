@@ -105,3 +105,8 @@ google
 pycryptodome
 notion-client
 pptx
+anthropic
+openai
+redis 
+celery[redis]
+sentence-transformer

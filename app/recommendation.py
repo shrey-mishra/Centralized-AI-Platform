@@ -273,7 +273,7 @@ async def fetch_calendar_events(start_date: Optional[str] = None, end_date: Opti
         if not tokens.get("google") or not tokens.get("google").get("access_token"):
             raise HTTPException(status_code=401, detail={
                 "action": "Requires authentication",
-                "auth_url": "https://backend.data-ai.co/auth/google"
+                "auth_url": "http://localhost:8000/auth/google"
             })
         
         events = await asyncio.get_event_loop().run_in_executor(
@@ -295,7 +295,7 @@ async def fetch_calendar_events(start_date: Optional[str] = None, end_date: Opti
         if "invalid_scope" in str(e).lower():
             raise HTTPException(status_code=401, detail={
                 "action": "Invalid scope",
-                "auth_url": "https://backend.data-ai.co/auth/google/force-reauth"
+                "auth_url": "http://localhost:8000/auth/google/force-reauth"
             })
         raise HTTPException(status_code=500, detail=f"Failed to fetch calendar events: {str(e)}")
 
@@ -314,7 +314,7 @@ async def fetch_notion_pages(user_id: Optional[str] = None) -> List[Dict]:
         if not tokens.get("notion") or not tokens.get("notion").get("access_token"):
             raise HTTPException(status_code=401, detail={
                 "action": "Requires authentication",
-                "auth_url": "https://backend.data.ai.co/auth/notion"
+                "auth_url": "http://localhost:8000/auth/notion"
             })
         
         pages = await asyncio.get_event_loop().run_in_executor(

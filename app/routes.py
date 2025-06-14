@@ -511,8 +511,11 @@ def ping():
 
 # In app/routes.py - Replace your /chat endpoint with this safer version
 
+@# Update in app/routes.py - Replace your existing /chat endpoint with this:
+
 @router.post("/chat")
-async def chat_endpoint(request: Request, current_user: User = Depends(get_current_user)):
+async def enhanced_chat_endpoint(request: Request, current_user: User = Depends(get_current_user)):
+    """Enhanced chat endpoint with Claude AI and function calling"""
     try:
         user_id = str(current_user.id)
         data = await request.json()
@@ -521,52 +524,53 @@ async def chat_endpoint(request: Request, current_user: User = Depends(get_curre
         if not message:
             raise HTTPException(status_code=400, detail="Message cannot be empty")
 
-        logger.info(f"Processing message for user {user_id}: {message}")
+        logger.info(f"Processing enhanced message for user {user_id}: {message}")
 
-        # Get user's available services - ADD NULL CHECK
-        user_tokens = load_tokens(user_id)
-        if user_tokens is None:
-            user_tokens = {}
+        # Import the enhanced AI service
+        from app.services.ai_service import ai_service
         
-        services = get_user_services_context(user_tokens)
-        if services is None:
-            services = {}
+        # Process message with enhanced AI
+        result = await ai_service.process_message(user_id, message)
         
-        # Try enhanced response first, with fallback
-        try:
-            result = generate_contextual_response_enhanced(message, user_id, services)
-            if result is None:
-                raise Exception("Enhanced response returned None")
-        except Exception as e:
-            logger.error(f"Enhanced response failed for user {user_id}: {str(e)}")
-            # FALLBACK to simple response
-            result = generate_simple_fallback_response(message, services)
-        
-        logger.info(f"Generated response for user {user_id}: {result.get('intent', 'unknown')}")
+        if not result["success"]:
+            logger.error(f"AI processing failed for user {user_id}: {result.get('error')}")
+            return {
+                "message": message,
+                "intent": "error",
+                "confidence": 0.5,
+                "response": result.get("response", "I encountered an error processing your request."),
+                "suggestions": [],
+                "follow_up_questions": ["How else can I help you today?"],
+                "notion_pages": []
+            }
+
+        logger.info(f"Enhanced AI response generated for user {user_id}")
         
         return {
             "message": message,
-            "intent": result.get("intent", "general"),
-            "confidence": result.get("confidence", 0.5), 
-            "response": result.get("response", "I'm here to help with your productivity tasks."),
+            "intent": "ai_response",
+            "confidence": 0.95,
+            "response": result["response"],
             "suggestions": result.get("suggestions", []),
             "follow_up_questions": result.get("follow_up_questions", []),
-            "notion_pages": result.get("notion_pages", [])
+            "function_results": result.get("function_results", []),
+            "notion_pages": [],  # Will be populated by function calls if needed
+            "metadata": result.get("metadata", {})
         }
         
     except Exception as e:
-        logger.error(f"Error in chat processing for user {current_user.id}: {str(e)}")
-        # SAFE FALLBACK RESPONSE
+        logger.error(f"Error in enhanced chat processing for user {current_user.id}: {str(e)}")
+        # Safe fallback response
         return {
             "message": message if 'message' in locals() else "",
             "intent": "error",
             "confidence": 0.5,
-            "response": "I can help you check your calendar, emails, or create documents. What would you like to do?",
+            "response": "I'm having trouble right now, but I'm still here to help! 😊 Please try again.",
             "suggestions": [
                 {
-                    "action": "Check calendar",
-                    "service": "google_calendar",
-                    "description": "View your upcoming events",
+                    "action": "Try again",
+                    "service": "system",
+                    "description": "Please rephrase your question",
                     "priority": 5
                 }
             ],
@@ -684,7 +688,7 @@ async def list_notion_pages_endpoint(current_user: User = Depends(get_current_us
         if "notion not connected" in str(e).lower() or "notion access token not found" in str(e).lower():
             raise HTTPException(status_code=401, detail={
                 'action': 'Requires authentication', 
-                'auth_url': f"{os.getenv('BASE_URL', 'https://backend.data-ai.co')}/auth/notion"
+                'auth_url': f"{os.getenv('BASE_URL', 'http://localhost:8000')}/auth/notion"
             })
         raise HTTPException(status_code=500, detail=str(e))
     
@@ -703,7 +707,7 @@ async def search_notion_pages_endpoint(
         if "notion not connected" in str(e).lower():
             raise HTTPException(status_code=401, detail={
                 'action': 'Requires authentication', 
-                'auth_url': f"{os.getenv('BASE_URL', 'https://backend.data-ai.co')}/auth/notion"
+                'auth_url': f"{os.getenv('BASE_URL', 'http://localhost:8000')}/auth/notion"
             })
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -758,7 +762,7 @@ async def list_calendar_events_endpoint(request: Request, current_user: User = D
     except Exception as e:
         logger.error(f"Error listing calendar events: {str(e)}")
         if "google authentication required" in str(e).lower():
-            raise HTTPException(status_code=401, detail={'action': 'Requires authentication', 'auth_url': f"{os.getenv('BASE_URL', 'https://backend.data-ai.co')}/auth/google"})
+            raise HTTPException(status_code=401, detail={'action': 'Requires authentication', 'auth_url': f"{os.getenv('BASE_URL', 'http://localhost:8000')}/auth/google"})
         raise HTTPException(status_code=500, detail=f"Error listing calendar events: {str(e)}")
 
 @router.get('/download_slides/{filename}')
@@ -840,9 +844,9 @@ def execute_task_endpoint(
     except Exception as e:
         logger.error(f"Error executing task: {str(e)}")
         if "google authentication required" in str(e).lower():
-            raise HTTPException(status_code=401, detail={'action': 'Requires authentication', 'auth_url': f"{os.getenv('BASE_URL', 'https://backend.data-ai.co')}/auth/google"})
+            raise HTTPException(status_code=401, detail={'action': 'Requires authentication', 'auth_url': f"{os.getenv('BASE_URL', 'http://localhost:8000')}/auth/google"})
         if "notion token not found" in str(e).lower():
-            raise HTTPException(status_code=401, detail={'action': 'Requires authentication', 'auth_url': f"{os.getenv('BASE_URL', 'https://backend.data-ai.co')}/auth/notion"})
+            raise HTTPException(status_code=401, detail={'action': 'Requires authentication', 'auth_url': f"{os.getenv('BASE_URL', 'http://localhost:8000')}/auth/notion"})
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.get('/list_gmail_messages')
@@ -897,7 +901,7 @@ async def list_gmail_messages(
         if "google authentication required" in str(e).lower():
             raise HTTPException(status_code=401, detail={
                 'action': 'Requires authentication', 
-                'auth_url': f"{os.getenv('BASE_URL', 'https://backend.data-ai.co')}/auth/google"
+                'auth_url': f"{os.getenv('BASE_URL', 'http://localhost:8000')}/auth/google"
             })
         raise HTTPException(status_code=500, detail=f"Error listing Gmail messages: {str(e)}")
 
@@ -945,7 +949,7 @@ async def compose_gmail(
         if "google authentication required" in str(e).lower():
             raise HTTPException(status_code=401, detail={
                 'action': 'Requires authentication', 
-                'auth_url': f"{os.getenv('BASE_URL', 'https://backend.data-ai.co')}/auth/google"
+                'auth_url': f"{os.getenv('BASE_URL', 'http://localhost:8000')}/auth/google"
             })
         raise HTTPException(status_code=500, detail=f"Error composing Gmail: {str(e)}")
 
@@ -977,7 +981,7 @@ async def send_gmail_direct(
         if "google authentication required" in str(e).lower():
             raise HTTPException(status_code=401, detail={
                 'action': 'Requires authentication', 
-                'auth_url': f"{os.getenv('BASE_URL', 'https://backend.data-ai.co')}/auth/google"
+                'auth_url': f"{os.getenv('BASE_URL', 'http://localhost:8000')}/auth/google"
             })
         raise HTTPException(status_code=500, detail=f"Error sending Gmail: {str(e)}")
     
@@ -1044,7 +1048,7 @@ async def create_calendar_event_direct(
         if "google authentication required" in str(e).lower():
             raise HTTPException(status_code=401, detail={
                 'action': 'Requires authentication', 
-                'auth_url': f"{os.getenv('BASE_URL', 'https://backend.data-ai.co')}/auth/google"
+                'auth_url': f"{os.getenv('BASE_URL', 'http://localhost:8000')}/auth/google"
             })
         raise HTTPException(status_code=500, detail=f"Error creating calendar event: {str(e)}")
 
@@ -1078,7 +1082,7 @@ async def get_calendar_event(
         if "google authentication required" in str(e).lower():
             raise HTTPException(status_code=401, detail={
                 'action': 'Requires authentication', 
-                'auth_url': f"{os.getenv('BASE_URL', 'https://backend.data-ai.co')}/auth/google"
+                'auth_url': f"{os.getenv('BASE_URL', 'http://localhost:8000')}/auth/google"
             })
         raise HTTPException(status_code=500, detail=f"Error getting calendar event: {str(e)}")
 
@@ -1105,7 +1109,7 @@ async def delete_calendar_event(
         if "google authentication required" in str(e).lower():
             raise HTTPException(status_code=401, detail={
                 'action': 'Requires authentication', 
-                'auth_url': f"{os.getenv('BASE_URL', 'https://backend.data-ai.co')}/auth/google"
+                'auth_url': f"{os.getenv('BASE_URL', 'http://localhost:8000')}/auth/google"
             })
         raise HTTPException(status_code=500, detail=f"Error deleting calendar event: {str(e)}")
     
@@ -1178,7 +1182,7 @@ async def update_notion_page(
         if "notion not connected" in str(e).lower() or "notion access token not found" in str(e).lower():
             raise HTTPException(status_code=401, detail={
                 'action': 'Requires authentication', 
-                'auth_url': f"{os.getenv('BASE_URL', 'https://backend.data-ai.co')}/auth/notion"
+                'auth_url': f"{os.getenv('BASE_URL', 'http://localhost:8000')}/auth/notion"
             })
         raise HTTPException(status_code=500, detail=f"Error updating Notion page: {str(e)}")
 
@@ -1215,7 +1219,7 @@ async def delete_notion_page(
         if "notion not connected" in str(e).lower() or "notion access token not found" in str(e).lower():
             raise HTTPException(status_code=401, detail={
                 'action': 'Requires authentication', 
-                'auth_url': f"{os.getenv('BASE_URL', 'https://backend.data-ai.co')}/auth/notion"
+                'auth_url': f"{os.getenv('BASE_URL', 'http://localhost:8000')}/auth/notion"
             })
         raise HTTPException(status_code=500, detail=f"Error deleting Notion page: {str(e)}")
 
@@ -1270,7 +1274,7 @@ async def get_notion_page(
         if "notion not connected" in str(e).lower() or "notion access token not found" in str(e).lower():
             raise HTTPException(status_code=401, detail={
                 'action': 'Requires authentication', 
-                'auth_url': f"{os.getenv('BASE_URL', 'https://backend.data-ai.co')}/auth/notion"
+                'auth_url': f"{os.getenv('BASE_URL', 'http://localhost:8000')}/auth/notion"
             })
         raise HTTPException(status_code=500, detail=f"Error getting Notion page: {str(e)}")
 
@@ -1299,6 +1303,6 @@ async def create_notion_page_direct(
         if "notion not connected" in str(e).lower() or "notion access token not found" in str(e).lower():
             raise HTTPException(status_code=401, detail={
                 'action': 'Requires authentication', 
-                'auth_url': f"{os.getenv('BASE_URL', 'https://backend.data-ai.co')}/auth/notion"
+                'auth_url': f"{os.getenv('BASE_URL', 'http://localhost:8000')}/auth/notion"
             })
         raise HTTPException(status_code=500, detail=f"Error creating Notion page: {str(e)}")
